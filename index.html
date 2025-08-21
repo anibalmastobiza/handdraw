@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HandDraw — Dibujo con la mano (MediaPipe)</title>
+  <style>
+    :root { --bg:#0b1020; --ink:#00c2ff; --panel:#11172a; --muted:#7f8ca3; --ok:#20c997; --warn:#f59f00; --err:#fa5252; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; background: var(--bg); color: #eaf2ff; font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; }
+    header { padding: 12px 16px; background: var(--panel); border-bottom: 1px solid #1d2540; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    header h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 600; }
+    .btn { appearance: none; border: 1px solid #2b345a; background: #1a2140; color:#eaf2ff; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight:600; }
+    .btn[disabled] { opacity: .5; cursor: not-allowed; }
+    .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    label { color: var(--muted); font-size: 13px; }
+    input[type="color"] { width: 34px; height: 34px; border: none; background: transparent; padding: 0; border-radius: 6px; box-shadow: 0 0 0 1px #2b345a inset; }
+    input[type="range"] { accent-color: var(--ink); }
+    .wrap { position: relative; width: min(96vw, 1200px); margin: 14px auto; }
+    video, canvas { width: 100%; height: auto; display: block; border-radius: 16px; }
+    .mirror { transform: scaleX(-1); }
+    #video { position: relative; z-index: 0; background: #000; }
+    #overlay { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none; }
+    #draw { position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; }
+    footer { text-align: center; color: var(--muted); font-size: 12px; padding: 10px; }
+    .pill { padding: 4px 8px; border-radius: 999px; background: #0e1530; border:1px solid #24305a; }
+
+    .notice { margin: 12px auto; width: min(96vw, 1200px); background:#121b34; border:1px solid #263056; border-radius:12px; padding:12px 14px; }
+    .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
+    .ok { color:#c8fff1; border-color: #174; background: #103a34; }
+    .warn { color:#fff1cc; border-color: #5a460e; background: #3d2f09; }
+    .err { color:#ffe3e3; border-color: #5a1414; background: #3a0f0f; }
+    details { margin-top: 8px; }
+    summary { cursor: pointer; color: #c7d2fe; }
+    ul.testlist { list-style: none; padding-left: 0; }
+    ul.testlist li { margin: 6px 0; display: flex; align-items: center; gap: 8px; }
+    code.k { background:#0e1530; border:1px solid #24305a; padding:2px 6px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>✍️ HandDraw</h1>
+    <div class="toolbar">
+      <button id="startBtn" class="btn">Iniciar cámara</button>
+      <button id="stopBtn" class="btn" disabled>Detener</button>
+      <button id="clearBtn" class="btn">Limpiar</button>
+      <button id="saveBtn" class="btn">Guardar PNG</button>
+      <label>Color <input id="color" type="color" value="#00c2ff" /></label>
+      <label>Grosor <input id="thickness" type="range" min="2" max="24" value="6" /></label>
+      <button id="mouseModeBtn" class="btn" title="Prueba sin cámara">Modo ratón (test)</button>
+      <span class="pill">Gesto: pellizco pulgar-índice = dibujar · levantar = parar</span>
+      <label style="margin-left:8px;display:flex;align-items:center;gap:6px">
+        <input id="includeOverlay" type="checkbox" checked /> Incluir overlay
+      </label>
+      <button id="saveCompositeBtn" class="btn" title="Exporta vídeo+trazos (y overlay si está marcado)">Guardar composición (video+trazo)</button>
+    </div>
+  </header>
+
+  <div class="notice" id="envBanner" hidden>
+    <div id="envMsg" style="margin-top:6px"></div>
+    <details>
+      <summary>Ver comprobaciones y tests</summary>
+      <ul class="testlist" id="tests"></ul>
+      <div style="margin-top:8px; font-size:13px; color:var(--muted)">
+        Consejos: usa <code class="k">https://</code> o <code class="k">http://localhost</code>. Si estás dentro de un <em>iframe</em> (p. ej., Colab), debe tener <code class="k">allow="camera; microphone"</code>. Da permiso manualmente a la cámara en tu navegador.
+      </div>
+    </details>
+  </div>
+
+  <div class="wrap">
+    <video id="video" class="mirror" autoplay playsinline muted></video>
+    <canvas id="draw" class="mirror"></canvas>
+    <canvas id="overlay" class="mirror"></canvas>
+  </div>
+
+  <footer>
+    Requisitos: conexión segura (HTTPS) o <code>localhost</code>. Pulgar+índice para dibujar. También puedes probar con <strong>Modo ratón</strong> sin cámara.
+  </footer>
+
+  <!-- Instrucciones para Google Colab (pegar en una celda con %%html o usar IPython.display.HTML) -->
+  <section class="notice" style="margin-top:8px">
+    <details>
+      <summary><strong>¿Usarlo en Google Colab?</strong> Abre y sigue estas instrucciones</summary>
+      <div style="margin-top:8px; font-size:14px">
+        <p><strong>Opción A (recomendada):</strong> usa una <code class="k">celda</code> con magia <code class="k">%%html</code> y pega el <em>HTML completo</em> (este archivo). Ejemplo:</p>
+<pre style="white-space: pre-wrap; background:#0e1530; border:1px solid #24305a; border-radius:8px; padding:10px;">
+%%html
+&lt;!-- Pega aquí TODO el contenido del index.html (incluida la etiqueta &lt;html&gt;) --&gt;
+</pre>
+        <p><strong>Opción B:</strong> con Python:</p>
+<pre style="white-space: pre-wrap; background:#0e1530; border:1px solid #24305a; border-radius:8px; padding:10px;">from IPython.display import HTML
+HTML(open('index.html', 'r', encoding='utf-8').read())
+</pre>
+        <p>Si usas un <em>iframe</em>, añade <code class="k">allow="camera; microphone; autoplay; clipboard-read; clipboard-write"</code>. En Colab, si insertas HTML crudo con <code class="k">%%html</code>, normalmente <em>no</em> va en un iframe, por lo que la cámara funciona mejor.</p>
+      </div>
+    </details>
+  </section>
+
+
+  <script type="module">
+    // --- Importa MediaPipe Tasks Vision ---
+    import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
+
+    // --- Referencias UI ---
+    const video = document.getElementById('video');
+    const draw = document.getElementById('draw');
+    const overlay = document.getElementById('overlay');
+    const ctxDraw = draw.getContext('2d');
+    const ctxOverlay = overlay.getContext('2d');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const saveCompositeBtn = document.getElementById('saveCompositeBtn');
+    const includeOverlayEl = document.getElementById('includeOverlay');
+    const colorEl = document.getElementById('color');
+    const thickEl = document.getElementById('thickness');
+    const mouseModeBtn = document.getElementById('mouseModeBtn');
+    const envBanner = document.getElementById('envBanner');
+    const envMsg = document.getElementById('envMsg');
+    const testsUl = document.getElementById('tests');
+
+    // --- Estado ---
+    let handLandmarker = null;
+    let stream = null;
+    let running = false;
+    let lastVideoTime = -1;
+    const lastPoint = { Left: null, Right: null };
+    const drawing = { Left: false, Right: false };
+    let mouseMode = false;
+
+    // --- Utilidades ---
+    function isSecureOrLocalhost() {
+      return window.isSecureContext || /^localhost$|^127\.|^\[::1\]/.test(location.hostname);
+    }
+
+    function showBanner(kind, html) {
+      envBanner.hidden = false;
+      const label = kind === 'ok' ? '<span class="badge ok">OK</span>' : kind === 'warn' ? '<span class="badge warn">Atención</span>' : '<span class="badge err">Error</span>';
+      envMsg.innerHTML = label + ' ' + html;
+    }
+
+    function addTest(name, passed, note = '') {
+      const li = document.createElement('li');
+      const cls = passed ? 'ok' : 'err';
+      li.innerHTML = `<span class="badge ${cls}">${passed ? 'PASS' : 'FAIL'}</span> <strong>${name}</strong> <span style="color:var(--muted);font-size:13px">${note}</span>`;
+      testsUl.appendChild(li);
+    }
+
+    function resizeCanvases() {
+      const rect = video.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      for (const c of [draw, overlay]) {
+        c.width = Math.max(2, Math.floor(rect.width * dpr));
+        c.height = Math.max(2, Math.floor(rect.height * dpr));
+        c.style.width = rect.width + 'px';
+        c.style.height = rect.height + 'px';
+      }
+      ctxDraw.lineCap = 'round';
+      ctxDraw.lineJoin = 'round';
+    }
+
+    function savePNG() {
+      const link = document.createElement('a');
+      link.download = 'handdraw.png';
+      link.href = draw.toDataURL('image/png');
+      link.click();
+    }
+
+    function saveComposite() {
+      // Exporta la COMPOSICIÓN: video (reflejado como en pantalla) + dibujo (y overlay si se desea)
+      if (!video.videoWidth || !video.videoHeight) { showBanner('warn','El vídeo no está listo para exportar. Inicia la cámara.'); return; }
+      const w = overlay.width, h = overlay.height;
+      const off = document.createElement('canvas');
+      off.width = w; off.height = h;
+      const octx = off.getContext('2d');
+
+      // 1) Dibujar video reflejado
+      try {
+        octx.save();
+        octx.scale(-1, 1);
+        octx.drawImage(video, -w, 0, w, h);
+        octx.restore();
+      } catch (e) {
+        showBanner('err', 'No se pudo dibujar el vídeo en el canvas para exportar: ' + String(e));
+        return;
+      }
+
+      // 2) Dibujar trazo (canvas de dibujo) reflejado también para que coincida visualmente
+      octx.save();
+      octx.scale(-1, 1);
+      octx.drawImage(draw, -w, 0, w, h);
+      octx.restore();
+
+      // 3) Opcional: overlay (puntos)
+      if (includeOverlayEl.checked) {
+        octx.save();
+        octx.scale(-1, 1);
+        octx.drawImage(overlay, -w, 0, w, h);
+        octx.restore();
+      }
+
+      // 4) Descargar como JPEG (mejor para vídeo); calidad 0.92
+      const link = document.createElement('a');
+      link.download = 'handdraw_composite.jpg';
+      link.href = off.toDataURL('image/jpeg', 0.92);
+      link.click();
+    }
+
+    function px(lm, w, h) { return { x: lm.x * w, y: lm.y * h, z: lm.z }; }
+
+    function isPinching(landmarks, w, h, handKey) {
+      const p4 = px(landmarks[4], w, h);
+      const p8 = px(landmarks[8], w, h);
+      const dx = p4.x - p8.x, dy = p4.y - p8.y;
+      const dist = Math.hypot(dx, dy);
+      const diag = Math.hypot(w, h);
+      const onThresh = 0.035 * diag; // activar
+      const offThresh = 0.055 * diag; // desactivar
+      if (!drawing[handKey] && dist < onThresh) drawing[handKey] = true;
+      else if (drawing[handKey] && dist > offThresh) drawing[handKey] = false;
+      return drawing[handKey];
+    }
+
+    function drawOverlay(results) {
+      ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
+      const w = overlay.width, h = overlay.height;
+      ctxOverlay.globalAlpha = 0.9;
+      ctxOverlay.lineWidth = 2;
+      for (let i = 0; i < results.landmarks.length; i++) {
+        const lms = results.landmarks[i];
+        const tips = [0,4,8,12,16,20];
+        for (const idx of tips) {
+          const p = px(lms[idx], w, h);
+          ctxOverlay.beginPath();
+          ctxOverlay.arc(p.x, p.y, 4, 0, Math.PI*2);
+          ctxOverlay.strokeStyle = 'rgba(0,194,255,0.8)';
+          ctxOverlay.stroke();
+        }
+      }
+    }
+
+    function drawStroke(handKey, point) {
+      const thickness = Number(thickEl.value);
+      ctxDraw.strokeStyle = colorEl.value;
+      ctxDraw.lineWidth = thickness;
+      const lp = lastPoint[handKey];
+      if (!lp) { lastPoint[handKey] = point; return; }
+      ctxDraw.beginPath();
+      ctxDraw.moveTo(lp.x, lp.y);
+      ctxDraw.lineTo(point.x, point.y);
+      ctxDraw.stroke();
+      lastPoint[handKey] = point;
+    }
+
+    function clearTraces() { lastPoint.Left = lastPoint.Right = null; }
+
+    async function waitForVideoReady() {
+      let tries = 0;
+      while ((video.videoWidth === 0 || video.videoHeight === 0) && tries < 50) {
+        await new Promise(r => setTimeout(r, 50));
+        tries++;
+      }
+    }
+
+    async function start() {
+      if (running || mouseMode) return;
+
+      // Checks previos para evitar NotAllowedError por contexto inseguro
+      const secure = isSecureOrLocalhost();
+      addTest('Contexto seguro o localhost', secure, location.protocol + '//' + location.host);
+      if (!secure) {
+        showBanner('err', 'El navegador bloquea la cámara en contextos inseguros. Abre esta página con <code class="k">https://</code> o desde <code class="k">http://localhost</code>.');
+        return;
+      }
+
+      if (!('mediaDevices' in navigator) || !('getUserMedia' in navigator.mediaDevices)) {
+        addTest('API mediaDevices.getUserMedia', false, 'No disponible');
+        showBanner('err', 'Tu navegador no expone <code class="k">navigator.mediaDevices.getUserMedia</code>. Actualiza el navegador.');
+        return;
+      } else {
+        addTest('API mediaDevices.getUserMedia', true);
+      }
+
+      // Si está embebido en iframe, avisar (p.ej., Colab requiere allow="camera")
+      const inIframe = window.top !== window.self;
+      addTest('Página embebida en iframe', inIframe !== false, inIframe ? 'Sí' : 'No');
+      if (inIframe) {
+        showBanner('warn', 'Parece que estás dentro de un <em>iframe</em>. Asegúrate de que el <em>iframe</em> tenga <code class="k">allow="camera; microphone"</code> o la cámara será bloqueada.');
+      }
+
+      // Permisos (si la API está disponible)
+      let permNote = 'No soportado';
+      try {
+        if (navigator.permissions?.query) {
+          const st = await navigator.permissions.query({ name: 'camera' });
+          permNote = st.state;
+          addTest('Permiso cámara (permissions API)', st.state === 'granted' || st.state === 'prompt', 'estado=' + st.state);
+          if (st.state === 'denied') {
+            showBanner('err', 'Permiso de cámara DENEGADO. Ve a los ajustes del sitio en tu navegador y habilita la cámara.');
+            return;
+          }
+        } else {
+          addTest('Permiso cámara (permissions API)', true, permNote);
+        }
+      } catch (e) {
+        addTest('Permiso cámara (permissions API)', false, String(e));
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        addTest('getUserMedia() obtuvo stream', true);
+      } catch (err) {
+        addTest('getUserMedia() obtuvo stream', false, err && err.name ? err.name : String(err));
+        if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) {
+          const msg = inIframe
+            ? 'Bloqueo de cámara por políticas de <em>iframe</em> o permisos. Añade <code class="k">allow=\"camera; microphone\"</code> en el <em>iframe</em> y vuelve a intentarlo.'
+            : 'Permiso denegado o política de sitio. Asegúrate de aceptar el cuadro de permisos y que el sitio esté en HTTPS.';
+          showBanner('err', msg);
+        } else if (err && err.name === 'NotFoundError') {
+          showBanner('err', 'No se ha encontrado ninguna cámara. Conecta un dispositivo o habilita una cámara virtual.');
+        } else if (err && err.name === 'OverconstrainedError') {
+          showBanner('err', 'Las restricciones de resolución no se pueden cumplir. Prueba sin restricciones de tamaño.');
+        } else {
+          showBanner('err', 'Fallo al iniciar cámara: ' + (err && err.message ? err.message : String(err)));
+        }
+        return;
+      }
+
+      video.srcObject = stream;
+      try { await video.play(); } catch {}
+      await waitForVideoReady();
+      resizeCanvases();
+
+      // Cargar modelo si hace falta
+      if (!handLandmarker) {
+        const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm");
+        handLandmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+            delegate: 'GPU'
+          },
+          runningMode: 'VIDEO',
+          numHands: 2,
+          minHandDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.3,
+          minHandPresenceConfidence: 0.5,
+        });
+      }
+
+      running = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      window.addEventListener('resize', resizeCanvases);
+      loop();
+    }
+
+    function stop() {
+      running = false;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      window.removeEventListener('resize', resizeCanvases);
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+      clearTraces();
+      drawing.Left = drawing.Right = false;
+      ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
+    }
+
+    function loop() {
+      if (!running) return;
+      if (video.currentTime !== lastVideoTime) {
+        const now = performance.now();
+        const results = handLandmarker.detectForVideo(video, now);
+        lastVideoTime = video.currentTime;
+        if (results?.landmarks?.length) {
+          const w = overlay.width, h = overlay.height;
+          drawOverlay(results);
+          for (let i = 0; i < results.landmarks.length; i++) {
+            const handKey = (results.handednesses && results.handednesses[i] && results.handednesses[i][0]) ? results.handednesses[i][0].categoryName : (i === 0 ? 'Left' : 'Right');
+            const lms = results.landmarks[i];
+            const pen = px(lms[8], w, h);
+            const pinch = isPinching(lms, w, h, handKey);
+            if (pinch) drawStroke(handKey, pen); else lastPoint[handKey] = null;
+          }
+        } else {
+          ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
+          clearTraces();
+        }
+      }
+      requestAnimationFrame(loop);
+    }
+
+    // --- Modo ratón (tests sin cámara) ---
+    function enableMouseMode(enable) {
+      mouseMode = enable;
+      if (enable) {
+        stop();
+        startBtn.disabled = true;
+        stopBtn.disabled = true;
+        overlay.style.pointerEvents = 'auto';
+        ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
+        showBanner('ok', 'Modo ratón ACTIVADO. Mantén pulsado el botón izquierdo para dibujar.');
+      } else {
+        overlay.style.pointerEvents = 'none';
+        envBanner.hidden = true;
+      }
+    }
+
+    let mouseDown = false;
+    overlay.addEventListener('mousedown', (e) => {
+      if (!mouseMode) return;
+      const rect = overlay.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      mouseDown = true;
+      lastPoint.Left = { x: (e.clientX - rect.left) * dpr, y: (e.clientY - rect.top) * dpr };
+    });
+    overlay.addEventListener('mousemove', (e) => {
+      if (!mouseMode || !mouseDown) return;
+      const rect = overlay.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const p = { x: (e.clientX - rect.left) * dpr, y: (e.clientY - rect.top) * dpr };
+      drawStroke('Left', p);
+    });
+    overlay.addEventListener('mouseup', () => { if (mouseMode) { mouseDown = false; lastPoint.Left = null; } });
+    overlay.addEventListener('mouseleave', () => { if (mouseMode) { mouseDown = false; lastPoint.Left = null; } });
+
+    // --- Eventos UI ---
+    startBtn.addEventListener('click', start);
+    stopBtn.addEventListener('click', stop);
+    clearBtn.addEventListener('click', () => ctxDraw.clearRect(0, 0, draw.width, draw.height));
+    saveBtn.addEventListener('click', savePNG);
+    mouseModeBtn.addEventListener('click', () => enableMouseMode(!mouseMode));
+    saveCompositeBtn.addEventListener('click', saveComposite);
+
+    // --- Tests automáticos de entorno ---
+    (async function runEnvTests(){
+      testsUl.innerHTML = '';
+      addTest('isSecureContext', isSecureOrLocalhost(), String(isSecureOrLocalhost()));
+      addTest('Soporta permissions API', !!(navigator.permissions?.query), navigator.permissions?.query ? 'sí' : 'no');
+      addTest('Soporta mediaDevices', !!navigator.mediaDevices, navigator.mediaDevices ? 'sí' : 'no');
+      try {
+        const devs = await navigator.mediaDevices?.enumerateDevices?.();
+        const cams = (devs || []).filter(d => d.kind === 'videoinput');
+        addTest('enumerateDevices() videoinput', cams.length > 0, `cámaras detectadas: ${cams.length}`);
+      } catch (e) {
+        addTest('enumerateDevices() videoinput', false, String(e));
+      }
+      const inIframe = window.top !== window.self;
+      addTest('Embebido en iframe', inIframe !== false, inIframe ? 'sí' : 'no');
+      addTest('Compatibilidad exportación (toDataURL)', (()=>{try{const c=document.createElement('canvas');c.width=2;c.height=2;return typeof c.toDataURL==='function';}catch(e){return false;}})(), 'canvas.toDataURL disponible');
+      if (!isSecureOrLocalhost() || inIframe) {
+        showBanner('warn', 'Puede que la cámara esté bloqueada por contexto inseguro o por estar en un <em>iframe</em>. Usa <code class="k">https://</code>/<code class="k">localhost</code> y <code class="k">allow=\"camera; microphone\"</code>.');
+      }
+    })();
+
+    // Autoinicio si ya hay permiso concedido
+    (async function autoStart(){
+      try {
+        if (navigator.permissions?.query) {
+          const st = await navigator.permissions.query({ name: 'camera' });
+          if (st.state === 'granted') start();
+        }
+      } catch {}
+      // Ajustar lienzos si el video ya tiene tamaño por estilos CSS
+      requestAnimationFrame(resizeCanvases);
+    })();
+  </script>
+</body>
+</html>

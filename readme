@@ -1,0 +1,63 @@
+# HandDraw — Webcam hand‑tracking drawing app (MediaPipe)
+
+A single‑file web app that uses your laptop/phone webcam to track your hands (MediaPipe Tasks Vision — Hand Landmarker) and lets you draw by performing a **thumb–index pinch**. Exports **strokes** as PNG or a **composite** (mirrored video + strokes \[+ optional overlay]) as JPEG.
+
+## Demo & structure
+
+* **Entry point:** `index.html` (no build step, load from HTTPS or localhost)
+* **Model:** MediaPipe Hand Landmarker (`hand_landmarker.task`) via JS CDN
+
+## Features
+
+* Live hand tracking (1–2 hands), pinch gesture to draw
+* Stroke **color** and **thickness**
+* **Save PNG** (strokes only)
+* **Save composition** (mirrored video + strokes + optional overlay) as JPEG
+* **Mouse mode** for testing without a camera
+* Built‑in **diagnostics** and environment checks (secure context, permissions, devices, iframe)
+
+## Quick start (GitHub Pages)
+
+1. Create a repository, e.g. `handdraw`.
+2. Add **`index.html`** from this project at the repository root.
+3. Go to **Settings → Pages**, choose **Deploy from a branch**, select `main` and `/ (root)`.
+4. Open the URL `https://<USER>.github.io/handdraw/`.
+5. Click **Start camera** and grant permission.
+
+> **Note**: Modern browsers require **HTTPS** (or `http://localhost`) for camera access. Opening the file via `file://` will not work.
+
+## Usage
+
+* **Draw:** pinch **thumb + index**; release to stop.
+* **Controls:** Start camera / Stop / Clear / Save PNG / Save composition / Mouse mode.
+* **Overlay:** toggle the "Include overlay" checkbox to include landmark points in the exported composition.
+
+## Troubleshooting
+
+* **NotAllowedError / SecurityError**: You are likely on an insecure context or denied permissions.
+
+  * Serve over **HTTPS** (GitHub Pages) or use **`http://localhost`**.
+  * Ensure the site/tab has **camera permission**.
+  * If embedded in an **iframe**, the frame must have `allow="camera; microphone"`.
+* **NotFoundError**: No camera detected. Connect one or enable a virtual camera.
+* **OverconstrainedError**: Lower or remove resolution constraints.
+
+The app shows a **diagnostic banner** with environment tests to help locate the issue.
+
+## Development tips
+
+* To test locally, run a static server (e.g. `npx serve`), then open the printed `http://localhost:PORT` URL.
+* The video/canvas are mirrored for natural UX; exports keep this mirrored layout.
+
+## Tech
+
+* **MediaPipe Tasks Vision** (JS) — Hand Landmarker model served via CDN
+* No frameworks/build tools; a single HTML file
+
+## Privacy
+
+All processing is done **client‑side** in your browser. No video or drawings are uploaded.
+
+## License
+
+MIT. See `LICENSE` if you add one; otherwise keep attribution to MediaPipe where appropriate.

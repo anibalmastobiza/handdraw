@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HandDraw — Dibujo con la mano (MediaPipe)</title>
+  <title>HandDraw - Hand tracking drawing (MediaPipe)</title>
   <style>
     :root { --bg:#0b1020; --ink:#00c2ff; --panel:#11172a; --muted:#7f8ca3; --ok:#20c997; --warn:#f59f00; --err:#fa5252; }
     * { box-sizing: border-box; }
@@ -42,28 +42,28 @@
   <header>
     <h1>✍️ HandDraw</h1>
     <div class="toolbar">
-      <button id="startBtn" class="btn">Iniciar cámara</button>
-      <button id="stopBtn" class="btn" disabled>Detener</button>
-      <button id="clearBtn" class="btn">Limpiar</button>
-      <button id="saveBtn" class="btn">Guardar PNG</button>
+      <button id="startBtn" class="btn">Start camera</button>
+      <button id="stopBtn" class="btn" disabled>Stop</button>
+      <button id="clearBtn" class="btn">Clear</button>
+      <button id="saveBtn" class="btn">Save PNG (strokes only)</button>
       <label>Color <input id="color" type="color" value="#00c2ff" /></label>
-      <label>Grosor <input id="thickness" type="range" min="2" max="24" value="6" /></label>
-      <button id="mouseModeBtn" class="btn" title="Prueba sin cámara">Modo ratón (test)</button>
-      <span class="pill">Gesto: pellizco pulgar-índice = dibujar · levantar = parar</span>
+      <label>Thickness <input id="thickness" type="range" min="2" max="24" value="6" /></label>
       <label style="margin-left:8px;display:flex;align-items:center;gap:6px">
-        <input id="includeOverlay" type="checkbox" checked /> Incluir overlay
+        <input id="includeOverlay" type="checkbox" checked /> Include overlay
       </label>
-      <button id="saveCompositeBtn" class="btn" title="Exporta vídeo+trazos (y overlay si está marcado)">Guardar composición (video+trazo)</button>
+      <button id="saveCompositeBtn" class="btn" title="Export video + strokes (and overlay if checked)">Save composition (video+strokes)</button>
+      <button id="mouseModeBtn" class="btn" title="Try without camera">Mouse mode (test)</button>
+      <span class="pill">Gesture: thumb–index pinch = draw · release = stop</span>
     </div>
   </header>
 
   <div class="notice" id="envBanner" hidden>
     <div id="envMsg" style="margin-top:6px"></div>
     <details>
-      <summary>Ver comprobaciones y tests</summary>
+      <summary>Environment checks & tests</summary>
       <ul class="testlist" id="tests"></ul>
       <div style="margin-top:8px; font-size:13px; color:var(--muted)">
-        Consejos: usa <code class="k">https://</code> o <code class="k">http://localhost</code>. Si estás dentro de un <em>iframe</em> (p. ej., Colab), debe tener <code class="k">allow="camera; microphone"</code>. Da permiso manualmente a la cámara en tu navegador.
+        Tips: use <code class="k">https://</code> or <code class="k">http://localhost</code>. If embedded in an <em>iframe</em> (e.g., a notebook), it must include <code class="k">allow="camera; microphone"</code>. Manually grant camera permission in your browser.
       </div>
     </details>
   </div>
@@ -75,34 +75,14 @@
   </div>
 
   <footer>
-    Requisitos: conexión segura (HTTPS) o <code>localhost</code>. Pulgar+índice para dibujar. También puedes probar con <strong>Modo ratón</strong> sin cámara.
+    Requirements: secure context (HTTPS) or <code>localhost</code>. Use thumb+index pinch to draw. You can also test the pipeline with <strong>Mouse mode</strong> without a camera.
   </footer>
 
-  <!-- Instrucciones para Google Colab (pegar en una celda con %%html o usar IPython.display.HTML) -->
-  <section class="notice" style="margin-top:8px">
-    <details>
-      <summary><strong>¿Usarlo en Google Colab?</strong> Abre y sigue estas instrucciones</summary>
-      <div style="margin-top:8px; font-size:14px">
-        <p><strong>Opción A (recomendada):</strong> usa una <code class="k">celda</code> con magia <code class="k">%%html</code> y pega el <em>HTML completo</em> (este archivo). Ejemplo:</p>
-<pre style="white-space: pre-wrap; background:#0e1530; border:1px solid #24305a; border-radius:8px; padding:10px;">
-%%html
-&lt;!-- Pega aquí TODO el contenido del index.html (incluida la etiqueta &lt;html&gt;) --&gt;
-</pre>
-        <p><strong>Opción B:</strong> con Python:</p>
-<pre style="white-space: pre-wrap; background:#0e1530; border:1px solid #24305a; border-radius:8px; padding:10px;">from IPython.display import HTML
-HTML(open('index.html', 'r', encoding='utf-8').read())
-</pre>
-        <p>Si usas un <em>iframe</em>, añade <code class="k">allow="camera; microphone; autoplay; clipboard-read; clipboard-write"</code>. En Colab, si insertas HTML crudo con <code class="k">%%html</code>, normalmente <em>no</em> va en un iframe, por lo que la cámara funciona mejor.</p>
-      </div>
-    </details>
-  </section>
-
-
   <script type="module">
-    // --- Importa MediaPipe Tasks Vision ---
+    // --- Import MediaPipe Tasks Vision ---
     import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
 
-    // --- Referencias UI ---
+    // --- UI refs ---
     const video = document.getElementById('video');
     const draw = document.getElementById('draw');
     const overlay = document.getElementById('overlay');
@@ -121,7 +101,7 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
     const envMsg = document.getElementById('envMsg');
     const testsUl = document.getElementById('tests');
 
-    // --- Estado ---
+    // --- State ---
     let handLandmarker = null;
     let stream = null;
     let running = false;
@@ -130,14 +110,14 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
     const drawing = { Left: false, Right: false };
     let mouseMode = false;
 
-    // --- Utilidades ---
+    // --- Utils ---
     function isSecureOrLocalhost() {
       return window.isSecureContext || /^localhost$|^127\.|^\[::1\]/.test(location.hostname);
     }
 
     function showBanner(kind, html) {
       envBanner.hidden = false;
-      const label = kind === 'ok' ? '<span class="badge ok">OK</span>' : kind === 'warn' ? '<span class="badge warn">Atención</span>' : '<span class="badge err">Error</span>';
+      const label = kind === 'ok' ? '<span class="badge ok">OK</span>' : kind === 'warn' ? '<span class="badge warn">Warning</span>' : '<span class="badge err">Error</span>';
       envMsg.innerHTML = label + ' ' + html;
     }
 
@@ -169,31 +149,31 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
     }
 
     function saveComposite() {
-      // Exporta la COMPOSICIÓN: video (reflejado como en pantalla) + dibujo (y overlay si se desea)
-      if (!video.videoWidth || !video.videoHeight) { showBanner('warn','El vídeo no está listo para exportar. Inicia la cámara.'); return; }
+      // Export composition: mirrored video + strokes (+ overlay optional)
+      if (!video.videoWidth || !video.videoHeight) { showBanner('warn','Video is not ready to export. Start the camera first.'); return; }
       const w = overlay.width, h = overlay.height;
       const off = document.createElement('canvas');
       off.width = w; off.height = h;
       const octx = off.getContext('2d');
 
-      // 1) Dibujar video reflejado
+      // 1) Draw mirrored video
       try {
         octx.save();
         octx.scale(-1, 1);
         octx.drawImage(video, -w, 0, w, h);
         octx.restore();
       } catch (e) {
-        showBanner('err', 'No se pudo dibujar el vídeo en el canvas para exportar: ' + String(e));
+        showBanner('err', 'Unable to draw the video frame to canvas: ' + String(e));
         return;
       }
 
-      // 2) Dibujar trazo (canvas de dibujo) reflejado también para que coincida visualmente
+      // 2) Draw strokes (mirrored)
       octx.save();
       octx.scale(-1, 1);
       octx.drawImage(draw, -w, 0, w, h);
       octx.restore();
 
-      // 3) Opcional: overlay (puntos)
+      // 3) Optional overlay
       if (includeOverlayEl.checked) {
         octx.save();
         octx.scale(-1, 1);
@@ -201,7 +181,7 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
         octx.restore();
       }
 
-      // 4) Descargar como JPEG (mejor para vídeo); calidad 0.92
+      // 4) Download as JPEG
       const link = document.createElement('a');
       link.download = 'handdraw_composite.jpg';
       link.href = off.toDataURL('image/jpeg', 0.92);
@@ -216,8 +196,8 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
       const dx = p4.x - p8.x, dy = p4.y - p8.y;
       const dist = Math.hypot(dx, dy);
       const diag = Math.hypot(w, h);
-      const onThresh = 0.035 * diag; // activar
-      const offThresh = 0.055 * diag; // desactivar
+      const onThresh = 0.035 * diag; // engage
+      const offThresh = 0.055 * diag; // disengage
       if (!drawing[handKey] && dist < onThresh) drawing[handKey] = true;
       else if (drawing[handKey] && dist > offThresh) drawing[handKey] = false;
       return drawing[handKey];
@@ -267,45 +247,43 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
     async function start() {
       if (running || mouseMode) return;
 
-      // Checks previos para evitar NotAllowedError por contexto inseguro
+      // Pre-checks: secure context, APIs, iframe restrictions
       const secure = isSecureOrLocalhost();
-      addTest('Contexto seguro o localhost', secure, location.protocol + '//' + location.host);
+      addTest('Secure context or localhost', secure, location.protocol + '//' + location.host);
       if (!secure) {
-        showBanner('err', 'El navegador bloquea la cámara en contextos inseguros. Abre esta página con <code class="k">https://</code> o desde <code class="k">http://localhost</code>.');
+        showBanner('err', 'Camera access requires a secure context. Open this page via <code class="k">https://</code> or <code class="k">http://localhost</code>.');
         return;
       }
 
       if (!('mediaDevices' in navigator) || !('getUserMedia' in navigator.mediaDevices)) {
-        addTest('API mediaDevices.getUserMedia', false, 'No disponible');
-        showBanner('err', 'Tu navegador no expone <code class="k">navigator.mediaDevices.getUserMedia</code>. Actualiza el navegador.');
+        addTest('mediaDevices.getUserMedia API', false, 'Unavailable');
+        showBanner('err', 'Your browser does not expose <code class="k">navigator.mediaDevices.getUserMedia</code>. Please update your browser.');
         return;
       } else {
-        addTest('API mediaDevices.getUserMedia', true);
+        addTest('mediaDevices.getUserMedia API', true);
       }
 
-      // Si está embebido en iframe, avisar (p.ej., Colab requiere allow="camera")
       const inIframe = window.top !== window.self;
-      addTest('Página embebida en iframe', inIframe !== false, inIframe ? 'Sí' : 'No');
+      addTest('Embedded in an iframe', inIframe !== false, inIframe ? 'Yes' : 'No');
       if (inIframe) {
-        showBanner('warn', 'Parece que estás dentro de un <em>iframe</em>. Asegúrate de que el <em>iframe</em> tenga <code class="k">allow="camera; microphone"</code> o la cámara será bloqueada.');
+        showBanner('warn', 'This page appears inside an <em>iframe</em>. Ensure the frame includes <code class="k">allow="camera; microphone"</code> or the camera may be blocked.');
       }
 
-      // Permisos (si la API está disponible)
-      let permNote = 'No soportado';
+      let permNote = 'Not supported';
       try {
         if (navigator.permissions?.query) {
           const st = await navigator.permissions.query({ name: 'camera' });
           permNote = st.state;
-          addTest('Permiso cámara (permissions API)', st.state === 'granted' || st.state === 'prompt', 'estado=' + st.state);
+          addTest('Camera permission (Permissions API)', st.state === 'granted' || st.state === 'prompt', 'state=' + st.state);
           if (st.state === 'denied') {
-            showBanner('err', 'Permiso de cámara DENEGADO. Ve a los ajustes del sitio en tu navegador y habilita la cámara.');
+            showBanner('err', 'Camera permission DENIED. Open your site settings and enable camera access.');
             return;
           }
         } else {
-          addTest('Permiso cámara (permissions API)', true, permNote);
+          addTest('Camera permission (Permissions API)', true, permNote);
         }
       } catch (e) {
-        addTest('Permiso cámara (permissions API)', false, String(e));
+        addTest('Camera permission (Permissions API)', false, String(e));
       }
 
       try {
@@ -313,20 +291,20 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
           video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false
         });
-        addTest('getUserMedia() obtuvo stream', true);
+        addTest('getUserMedia() returns stream', true);
       } catch (err) {
-        addTest('getUserMedia() obtuvo stream', false, err && err.name ? err.name : String(err));
+        addTest('getUserMedia() returns stream', false, err && err.name ? err.name : String(err));
         if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) {
           const msg = inIframe
-            ? 'Bloqueo de cámara por políticas de <em>iframe</em> o permisos. Añade <code class="k">allow=\"camera; microphone\"</code> en el <em>iframe</em> y vuelve a intentarlo.'
-            : 'Permiso denegado o política de sitio. Asegúrate de aceptar el cuadro de permisos y que el sitio esté en HTTPS.';
+            ? 'Camera blocked by <em>iframe</em> policies or permissions. Add <code class="k">allow="camera; microphone"</code> to the frame.'
+            : 'Permission denied or site policy. Accept the permission prompt and ensure the site is served over HTTPS.';
           showBanner('err', msg);
         } else if (err && err.name === 'NotFoundError') {
-          showBanner('err', 'No se ha encontrado ninguna cámara. Conecta un dispositivo o habilita una cámara virtual.');
+          showBanner('err', 'No camera found. Connect a device or enable a virtual camera.');
         } else if (err && err.name === 'OverconstrainedError') {
-          showBanner('err', 'Las restricciones de resolución no se pueden cumplir. Prueba sin restricciones de tamaño.');
+          showBanner('err', 'Requested resolution cannot be satisfied. Try removing constraints.');
         } else {
-          showBanner('err', 'Fallo al iniciar cámara: ' + (err && err.message ? err.message : String(err)));
+          showBanner('err', 'Failed to start camera: ' + (err && err.message ? err.message : String(err)));
         }
         return;
       }
@@ -336,7 +314,6 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
       await waitForVideoReady();
       resizeCanvases();
 
-      // Cargar modelo si hace falta
       if (!handLandmarker) {
         const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm");
         handLandmarker = await HandLandmarker.createFromOptions(vision, {
@@ -394,7 +371,7 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
       requestAnimationFrame(loop);
     }
 
-    // --- Modo ratón (tests sin cámara) ---
+    // --- Mouse mode (no camera) ---
     function enableMouseMode(enable) {
       mouseMode = enable;
       if (enable) {
@@ -403,7 +380,7 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
         stopBtn.disabled = true;
         overlay.style.pointerEvents = 'auto';
         ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
-        showBanner('ok', 'Modo ratón ACTIVADO. Mantén pulsado el botón izquierdo para dibujar.');
+        showBanner('ok', 'Mouse mode ENABLED. Hold left mouse button to draw.');
       } else {
         overlay.style.pointerEvents = 'none';
         envBanner.hidden = true;
@@ -428,36 +405,36 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
     overlay.addEventListener('mouseup', () => { if (mouseMode) { mouseDown = false; lastPoint.Left = null; } });
     overlay.addEventListener('mouseleave', () => { if (mouseMode) { mouseDown = false; lastPoint.Left = null; } });
 
-    // --- Eventos UI ---
+    // --- UI events ---
     startBtn.addEventListener('click', start);
     stopBtn.addEventListener('click', stop);
     clearBtn.addEventListener('click', () => ctxDraw.clearRect(0, 0, draw.width, draw.height));
     saveBtn.addEventListener('click', savePNG);
-    mouseModeBtn.addEventListener('click', () => enableMouseMode(!mouseMode));
     saveCompositeBtn.addEventListener('click', saveComposite);
+    mouseModeBtn.addEventListener('click', () => enableMouseMode(!mouseMode));
 
-    // --- Tests automáticos de entorno ---
+    // --- Automatic environment tests ---
     (async function runEnvTests(){
       testsUl.innerHTML = '';
       addTest('isSecureContext', isSecureOrLocalhost(), String(isSecureOrLocalhost()));
-      addTest('Soporta permissions API', !!(navigator.permissions?.query), navigator.permissions?.query ? 'sí' : 'no');
-      addTest('Soporta mediaDevices', !!navigator.mediaDevices, navigator.mediaDevices ? 'sí' : 'no');
+      addTest('Permissions API supported', !!(navigator.permissions?.query), navigator.permissions?.query ? 'yes' : 'no');
+      addTest('mediaDevices present', !!navigator.mediaDevices, navigator.mediaDevices ? 'yes' : 'no');
       try {
         const devs = await navigator.mediaDevices?.enumerateDevices?.();
         const cams = (devs || []).filter(d => d.kind === 'videoinput');
-        addTest('enumerateDevices() videoinput', cams.length > 0, `cámaras detectadas: ${cams.length}`);
+        addTest('enumerateDevices() videoinput', cams.length > 0, `cameras detected: ${cams.length}`);
       } catch (e) {
         addTest('enumerateDevices() videoinput', false, String(e));
       }
       const inIframe = window.top !== window.self;
-      addTest('Embebido en iframe', inIframe !== false, inIframe ? 'sí' : 'no');
-      addTest('Compatibilidad exportación (toDataURL)', (()=>{try{const c=document.createElement('canvas');c.width=2;c.height=2;return typeof c.toDataURL==='function';}catch(e){return false;}})(), 'canvas.toDataURL disponible');
+      addTest('Embedded in iframe', inIframe !== false, inIframe ? 'yes' : 'no');
+      addTest('Export support (toDataURL)', (()=>{try{const c=document.createElement('canvas');c.width=2;c.height=2;return typeof c.toDataURL==='function';}catch(e){return false;}})(), 'canvas.toDataURL available');
       if (!isSecureOrLocalhost() || inIframe) {
-        showBanner('warn', 'Puede que la cámara esté bloqueada por contexto inseguro o por estar en un <em>iframe</em>. Usa <code class="k">https://</code>/<code class="k">localhost</code> y <code class="k">allow=\"camera; microphone\"</code>.');
+        showBanner('warn', 'Camera may be blocked by insecure context or iframe policies. Use <code class="k">https://</code>/<code class="k">localhost</code> and <code class="k">allow="camera; microphone"</code>.');
       }
     })();
 
-    // Autoinicio si ya hay permiso concedido
+    // Auto-start if permission was already granted
     (async function autoStart(){
       try {
         if (navigator.permissions?.query) {
@@ -465,9 +442,9 @@ HTML(open('index.html', 'r', encoding='utf-8').read())
           if (st.state === 'granted') start();
         }
       } catch {}
-      // Ajustar lienzos si el video ya tiene tamaño por estilos CSS
       requestAnimationFrame(resizeCanvases);
     })();
   </script>
 </body>
 </html>
+
